@@ -32,6 +32,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -111,6 +112,8 @@ class ElfVisionMain(QWidget):
         left_panel.addWidget(self.video_label, stretch=1)
 
         self.info_label = QLabel("Task: idle | FPS: -- | Resolution: --")
+        self.info_label.setMinimumHeight(34)
+        self.info_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.info_label.setStyleSheet(
             "background: #edf2f5; color: #26323a; padding: 8px 10px; font-size: 14px;"
         )
@@ -159,8 +162,24 @@ class ElfVisionMain(QWidget):
         controls.addWidget(self.resolution_combo)
 
         controls.addWidget(self._section_label("Task Parameters"))
+        self.param_container = QWidget()
         self.param_box = QVBoxLayout()
-        controls.addLayout(self.param_box)
+        self.param_box.setContentsMargins(0, 0, 0, 0)
+        self.param_box.setSpacing(8)
+        self.param_container.setLayout(self.param_box)
+
+        self.param_scroll = QScrollArea()
+        self.param_scroll.setWidgetResizable(True)
+        self.param_scroll.setFrameShape(QFrame.NoFrame)
+        self.param_scroll.setMinimumHeight(120)
+        self.param_scroll.setMaximumHeight(260)
+        self.param_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.param_scroll.setWidget(self.param_container)
+        self.param_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: 0; }"
+            "QScrollArea QWidget { background: transparent; }"
+        )
+        controls.addWidget(self.param_scroll, stretch=1)
 
         self.start_button = QPushButton("Start")
         self.start_button.clicked.connect(self.start_current_task)
