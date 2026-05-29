@@ -31,7 +31,7 @@ TASKS = {
         "params": {
             "model_path": "/home/elf/my_yolo/yolov8-world/model/yolo_world_v2s_i8.rknn",
             "text_features": "",
-            "text_model": "",
+            "text_model": "/home/elf/my_yolo/yolov8-world/model/clip_text_fp16.rknn",
             "vocab_header": "/home/elf/my_yolo/yolov8-world/tokenizer/clip_vocab.h",
             "classes": "",
             "class_file": "",
