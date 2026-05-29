@@ -95,12 +95,6 @@ class ElfVisionMain(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("ELF2 Vision Demo")
-        self.setWindowFlags(
-            Qt.Window
-            | Qt.WindowMinimizeButtonHint
-            | Qt.WindowMaximizeButtonHint
-            | Qt.WindowCloseButtonHint
-        )
         self.resize(1180, 720)
 
         root_layout = QHBoxLayout(self)
