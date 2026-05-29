@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+build/
+install/
+log/
+runs/
+weights/
+*.pt
+*.onnx
+*.engine
+*.rknn
+.vscode/
