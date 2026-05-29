@@ -47,7 +47,6 @@ RESOLUTIONS = {
     "1920 x 1080": (1920, 1080),
 }
 
-
 class VideoLabel(QLabel):
     def __init__(self):
         super().__init__()
@@ -276,19 +275,29 @@ class ElfVisionMain(QWidget):
 
     def on_frame_ready(self, frame_bgr, metrics):
         self.video_label.set_frame(frame_bgr)
-        self.info_label.setText(
-            "Task: {task} | FPS: {fps:.2f} | Resolution: {width}x{height}".format(
-                task=metrics.get("task_name", "--"),
-                fps=metrics.get("fps", 0.0),
-                width=metrics.get("width", "--"),
-                height=metrics.get("height", "--"),
-            )
-        )
+        self.info_label.setText(self._format_video_info(metrics))
         status_text = metrics.get("status_text") or "Running"
         infer_ms = metrics.get("infer_ms")
         if infer_ms is not None:
             status_text = "{} | Infer: {:.1f} ms".format(status_text, infer_ms)
         self.status_label.setText(status_text)
+
+    def _format_video_info(self, metrics):
+        parts = [
+            "Task: {}".format(metrics.get("task_name", "--")),
+            "FPS: {:.2f}".format(metrics.get("fps", 0.0)),
+            "Resolution: {}x{}".format(
+                metrics.get("width", "--"),
+                metrics.get("height", "--"),
+            ),
+        ]
+        infer_ms = metrics.get("infer_ms")
+        if infer_ms is not None:
+            parts.append("Infer: {:.1f} ms".format(infer_ms))
+        detections = metrics.get("detections")
+        if detections is not None:
+            parts.append("Detections: {}".format(detections))
+        return " | ".join(parts)
 
     def on_worker_error(self, message):
         self.status_label.setText(message)
