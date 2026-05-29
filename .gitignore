@@ -8,8 +8,5 @@ install/
 log/
 runs/
 weights/
-*.pt
-*.onnx
 *.engine
-*.rknn
 .vscode/

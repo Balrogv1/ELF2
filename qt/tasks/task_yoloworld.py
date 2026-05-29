@@ -3,6 +3,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
+
 from task_base import BaseVisionTask, TaskResult
 
 
@@ -70,7 +72,7 @@ class YoloWorldTask(BaseVisionTask):
 
         if text_features_path:
             self.labels = self.module.load_labels(labels_path)
-            self.text_features = self.module.load_text_features(text_features_path)
+            self.text_features = self._load_text_features(text_features_path)
         else:
             if not text_model_path or not vocab_header:
                 raise FileNotFoundError(
@@ -168,3 +170,42 @@ class YoloWorldTask(BaseVisionTask):
             if path.exists():
                 return str(path)
         return ""
+
+    def _load_text_features(self, path):
+        try:
+            text = np.load(path, allow_pickle=False)
+        except ValueError as exc:
+            if "allow_pickle" not in str(exc):
+                raise
+            text = np.load(path, allow_pickle=True)
+
+        if isinstance(text, np.lib.npyio.NpzFile):
+            keys = list(text.keys())
+            if not keys:
+                raise ValueError("text_features npz is empty: {}".format(path))
+            text = text[keys[0]]
+
+        if isinstance(text, np.ndarray) and text.dtype == object:
+            if text.shape == ():
+                text = text.item()
+            elif text.size == 1:
+                text = text.reshape(-1)[0]
+
+        if isinstance(text, dict):
+            for key in ("text_features", "features", "arr_0"):
+                if key in text:
+                    text = text[key]
+                    break
+            else:
+                raise ValueError(
+                    "Pickled text_features dict must contain text_features/features/arr_0"
+                )
+
+        text = np.asarray(text, dtype=np.float32)
+        if text.shape == (80, 512):
+            text = np.expand_dims(text, 0)
+        if text.shape != (1, 80, 512):
+            raise ValueError(
+                "expected text feature shape (1, 80, 512), got {}".format(text.shape)
+            )
+        return text

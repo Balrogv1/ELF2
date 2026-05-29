@@ -22,7 +22,7 @@ def configure_qt_plugins():
 configure_qt_plugins()
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -95,6 +95,12 @@ class ElfVisionMain(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("ELF2 Vision Demo")
+        self.setWindowFlags(
+            Qt.Window
+            | Qt.WindowMinimizeButtonHint
+            | Qt.WindowMaximizeButtonHint
+            | Qt.WindowCloseButtonHint
+        )
         self.resize(1180, 720)
 
         root_layout = QHBoxLayout(self)
@@ -122,8 +128,15 @@ class ElfVisionMain(QWidget):
         right_panel.setStyleSheet(
             "QFrame { background: #f7f9fb; border: 1px solid #d8e0e6; }"
             "QLabel { color: #25313a; border: 0; background: transparent; }"
-            "QComboBox, QLineEdit { padding: 7px; border: 1px solid #bfccd6; background: white; }"
+            "QComboBox, QLineEdit { padding: 7px; border: 1px solid #bfccd6; background: white; color: #17212b; selection-background-color: #d7e6f5; selection-color: #17212b; }"
+            "QComboBox:hover, QLineEdit:hover { border-color: #8295a6; background: #f0f5f9; color: #17212b; }"
+            "QComboBox QAbstractItemView { background: white; color: #17212b; selection-background-color: #d7e6f5; selection-color: #17212b; outline: 0; border: 1px solid #bfccd6; }"
+            "QComboBox QAbstractItemView::item { min-height: 26px; padding: 4px 8px; background: white; color: #17212b; }"
+            "QComboBox QAbstractItemView::item:hover { background: #e5eef7; color: #17212b; }"
+            "QComboBox QAbstractItemView::item:selected { background: #d7e6f5; color: #17212b; }"
+            "QComboBox QAbstractItemView::item:selected:hover { background: #c7daec; color: #17212b; }"
             "QPushButton { padding: 10px; font-weight: 600; border: 0; background: #1f6feb; color: white; }"
+            "QPushButton:hover { background: #185abc; color: white; }"
             "QPushButton:disabled { background: #9aa8b5; }"
         )
         controls = QVBoxLayout(right_panel)
@@ -132,8 +145,10 @@ class ElfVisionMain(QWidget):
 
         controls.addWidget(self._section_label("Task"))
         self.task_combo = QComboBox()
+        self._style_combo_popup(self.task_combo)
         for task_id, meta in TASKS.items():
             self.task_combo.addItem(meta["label"], task_id)
+        self._fix_combo_item_colors(self.task_combo)
         self.task_combo.currentIndexChanged.connect(self.on_task_changed)
         controls.addWidget(self.task_combo)
 
@@ -143,8 +158,10 @@ class ElfVisionMain(QWidget):
 
         controls.addWidget(self._section_label("Resolution"))
         self.resolution_combo = QComboBox()
+        self._style_combo_popup(self.resolution_combo)
         for label in RESOLUTIONS:
             self.resolution_combo.addItem(label)
+        self._fix_combo_item_colors(self.resolution_combo)
         self.resolution_combo.currentIndexChanged.connect(self.restart_if_running)
         controls.addWidget(self.resolution_combo)
 
@@ -174,6 +191,24 @@ class ElfVisionMain(QWidget):
         label = QLabel(text)
         label.setStyleSheet("font-size: 13px; font-weight: 700; color: #33414c;")
         return label
+
+    def _style_combo_popup(self, combo):
+        combo.view().setTextElideMode(Qt.ElideNone)
+        combo.view().setCurrentIndex(combo.model().index(-1, -1))
+        combo.view().setStyleSheet(
+            "QListView { background: white; color: #17212b; outline: 0; border: 1px solid #bfccd6; }"
+            "QListView::item { min-height: 26px; padding: 4px 8px; background: white; color: #17212b; }"
+            "QListView::item:hover { background: #e5eef7; color: #17212b; }"
+            "QListView::item:selected { background: #d7e6f5; color: #17212b; }"
+            "QListView::item:selected:hover { background: #c7daec; color: #17212b; }"
+        )
+
+    def _fix_combo_item_colors(self, combo):
+        model = combo.model()
+        for row in range(combo.count()):
+            index = model.index(row, 0)
+            model.setData(index, QColor("#17212b"), Qt.ForegroundRole)
+            model.setData(index, QColor("#ffffff"), Qt.BackgroundRole)
 
     def on_task_changed(self):
         self.refresh_task_params()

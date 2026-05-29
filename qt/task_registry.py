@@ -29,10 +29,10 @@ TASKS = {
         "module": "tasks.task_yoloworld",
         "class": "YoloWorldTask",
         "params": {
-            "model_path": "",
+            "model_path": "/home/elf/my_yolo/yolov8-world/model/yolo_world_v2s_i8.rknn",
             "text_features": "",
             "text_model": "",
-            "vocab_header": "",
+            "vocab_header": "/home/elf/my_yolo/yolov8-world/tokenizer/clip_vocab.h",
             "classes": "",
             "class_file": "",
             "labels": "",
