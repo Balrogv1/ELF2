@@ -283,21 +283,12 @@ class ElfVisionMain(QWidget):
         self.status_label.setText(status_text)
 
     def _format_video_info(self, metrics):
-        parts = [
-            "Task: {}".format(metrics.get("task_name", "--")),
-            "FPS: {:.2f}".format(metrics.get("fps", 0.0)),
-            "Resolution: {}x{}".format(
-                metrics.get("width", "--"),
-                metrics.get("height", "--"),
-            ),
-        ]
-        infer_ms = metrics.get("infer_ms")
-        if infer_ms is not None:
-            parts.append("Infer: {:.1f} ms".format(infer_ms))
-        detections = metrics.get("detections")
-        if detections is not None:
-            parts.append("Detections: {}".format(detections))
-        return " | ".join(parts)
+        return "Task: {task} | FPS: {fps:.2f} | Resolution: {width}x{height}".format(
+            task=metrics.get("task_name", "--"),
+            fps=metrics.get("fps", 0.0),
+            width=metrics.get("width", "--"),
+            height=metrics.get("height", "--"),
+        )
 
     def on_worker_error(self, message):
         self.status_label.setText(message)
