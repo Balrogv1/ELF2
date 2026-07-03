@@ -1,5 +1,7 @@
 import importlib
+import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -21,7 +23,7 @@ def configure_qt_plugins():
 
 configure_qt_plugins()
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QProcess, Qt
 from PyQt5.QtGui import QColor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
@@ -89,6 +91,9 @@ class ElfVisionMain(QWidget):
     def __init__(self):
         super().__init__()
         self.worker = None
+        self.odin_driver_process = None
+        self.odin_bridge_process = None
+        self.odin_bridge_buffer = ""
         self.task_param_inputs = {}
         self.init_ui()
         self.refresh_task_params()
@@ -161,6 +166,27 @@ class ElfVisionMain(QWidget):
         self.resolution_combo.currentIndexChanged.connect(self.restart_if_running)
         controls.addWidget(self.resolution_combo)
 
+        controls.addWidget(self._section_label("Odin1 Position"))
+        self.odin_xyz_label = QLabel("X: -- | Y: -- | Z: --")
+        self.odin_xyz_label.setStyleSheet(
+            "background: #eef4f8; color: #17212b; padding: 8px; font-size: 13px;"
+        )
+        controls.addWidget(self.odin_xyz_label)
+
+        self.odin_status_label = QLabel("Odin1: stopped")
+        self.odin_status_label.setWordWrap(True)
+        self.odin_status_label.setStyleSheet("color: #667684;")
+        controls.addWidget(self.odin_status_label)
+
+        self.odin_start_button = QPushButton("Start Odin1 Lite")
+        self.odin_start_button.clicked.connect(self.start_odin1)
+        controls.addWidget(self.odin_start_button)
+
+        self.odin_stop_button = QPushButton("Stop Odin1")
+        self.odin_stop_button.clicked.connect(self.stop_odin1)
+        self.odin_stop_button.setEnabled(False)
+        controls.addWidget(self.odin_stop_button)
+
         controls.addWidget(self._section_label("Task Parameters"))
         self.param_container = QWidget()
         self.param_box = QVBoxLayout()
@@ -221,6 +247,128 @@ class ElfVisionMain(QWidget):
             index = model.index(row, 0)
             model.setData(index, QColor("#17212b"), Qt.ForegroundRole)
             model.setData(index, QColor("#ffffff"), Qt.BackgroundRole)
+
+
+    def start_odin1(self):
+        if self.odin_driver_process is not None:
+            self.odin_status_label.setText("Odin1: already running")
+            return
+
+        try:
+            self.odin_xyz_label.setText("X: -- | Y: -- | Z: --")
+            self.odin_bridge_buffer = ""
+            self.odin_driver_process = self._start_shell_process(
+                self._odin_driver_command(),
+                self.on_odin_driver_output,
+                self.on_odin_driver_finished,
+            )
+            self.odin_bridge_process = self._start_shell_process(
+                self._odin_bridge_command(),
+                self.on_odin_bridge_output,
+                self.on_odin_bridge_finished,
+            )
+        except Exception as exc:
+            self.stop_odin1()
+            QMessageBox.warning(self, "Odin1 Error", str(exc))
+            return
+
+        self.odin_start_button.setEnabled(False)
+        self.odin_stop_button.setEnabled(True)
+        self.odin_status_label.setText("Odin1: starting lite driver...")
+
+    def stop_odin1(self):
+        self._stop_process(self.odin_bridge_process)
+        self._stop_process(self.odin_driver_process)
+        self.odin_bridge_process = None
+        self.odin_driver_process = None
+        self.odin_start_button.setEnabled(True)
+        self.odin_stop_button.setEnabled(False)
+        self.odin_status_label.setText("Odin1: stopped")
+
+    def _start_shell_process(self, command, output_slot, finished_slot):
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.MergedChannels)
+        process.readyReadStandardOutput.connect(output_slot)
+        process.finished.connect(finished_slot)
+        process.start("bash", ["-lc", command])
+        if not process.waitForStarted(3000):
+            raise RuntimeError("Failed to start process: {}".format(command))
+        return process
+
+    def _stop_process(self, process):
+        if process is None:
+            return
+        if process.state() != QProcess.NotRunning:
+            process.terminate()
+            if not process.waitForFinished(3000):
+                process.kill()
+                process.waitForFinished(1000)
+
+    def _odin_driver_command(self):
+        return (
+            "source /opt/ros/humble/setup.bash; "
+            "source ~/odin1/install/setup.bash; "
+            "cd ~/odin1; "
+            "exec ros2 launch odin_ros_driver odin1_ros2_lite.launch.py"
+        )
+
+    def _odin_bridge_command(self):
+        bridge_path = Path(__file__).resolve().parent / "odin1_odom_bridge.py"
+        return (
+            "source /opt/ros/humble/setup.bash; "
+            "source ~/odin1/install/setup.bash; "
+            "exec python3 {}".format(shlex.quote(str(bridge_path)))
+        )
+
+    def on_odin_driver_output(self):
+        if self.odin_driver_process is None:
+            return
+        text = bytes(self.odin_driver_process.readAllStandardOutput()).decode(
+            errors="replace"
+        )
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            self.odin_status_label.setText("Odin1: {}".format(lines[-1][-120:]))
+
+    def on_odin_bridge_output(self):
+        if self.odin_bridge_process is None:
+            return
+        text = bytes(self.odin_bridge_process.readAllStandardOutput()).decode(
+            errors="replace"
+        )
+        self.odin_bridge_buffer += text
+        while "\n" in self.odin_bridge_buffer:
+            line, self.odin_bridge_buffer = self.odin_bridge_buffer.split("\n", 1)
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except ValueError:
+                continue
+            if "error" in payload:
+                self.odin_status_label.setText("Odin1 bridge: {}".format(payload["error"]))
+                continue
+            self.odin_xyz_label.setText(
+                "X: {x:.3f} | Y: {y:.3f} | Z: {z:.3f}".format(
+                    x=payload.get("x", 0.0),
+                    y=payload.get("y", 0.0),
+                    z=payload.get("z", 0.0),
+                )
+            )
+            self.odin_status_label.setText("Odin1: receiving /odin1/odometry")
+
+    def on_odin_driver_finished(self, *args):
+        self.odin_driver_process = None
+        if self.odin_bridge_process is None:
+            self.odin_start_button.setEnabled(True)
+            self.odin_stop_button.setEnabled(False)
+
+    def on_odin_bridge_finished(self, *args):
+        self.odin_bridge_process = None
+        if self.odin_driver_process is None:
+            self.odin_start_button.setEnabled(True)
+            self.odin_stop_button.setEnabled(False)
 
     def on_task_changed(self):
         self.refresh_task_params()
@@ -339,6 +487,7 @@ class ElfVisionMain(QWidget):
         self.stop_button.setEnabled(False)
 
     def closeEvent(self, event):
+        self.stop_odin1()
         self.stop_worker()
         event.accept()
 
