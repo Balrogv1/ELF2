@@ -58,7 +58,9 @@ class VideoWorker(QThread):
 
     def stop(self):
         self._running = False
-        self.wait(3000)
+        if self.cap is not None:
+            self.cap.release()
+        return self.wait(3000)
 
     def _open_camera(self):
         import cv2

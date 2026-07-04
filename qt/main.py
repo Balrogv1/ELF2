@@ -72,6 +72,11 @@ class VideoLabel(QLabel):
         self.setPixmap(QPixmap())
         self.setText(message)
 
+    def set_blackout(self):
+        self._pixmap = None
+        self.setPixmap(QPixmap())
+        self.setText("")
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_pixmap()
@@ -91,6 +96,7 @@ class ElfVisionMain(QWidget):
     def __init__(self):
         super().__init__()
         self.worker = None
+        self.stopping_workers = []
         self.odin_driver_process = None
         self.odin_bridge_process = None
         self.odin_bridge_buffer = ""
@@ -459,9 +465,14 @@ class ElfVisionMain(QWidget):
         self.video_label.set_message("Starting camera and task...")
 
     def stop_worker(self):
-        if self.worker is not None:
-            self.worker.stop()
-            self.worker = None
+        worker = self.worker
+        self.worker = None
+        self.video_label.set_blackout()
+        self.info_label.setText("Task: stopped | FPS: -- | Resolution: --")
+        self.status_label.setText("Stopped")
+        if worker is not None and not worker.stop():
+            self.stopping_workers.append(worker)
+            self.status_label.setText("Stopping...")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
@@ -470,6 +481,8 @@ class ElfVisionMain(QWidget):
             self.start_current_task()
 
     def on_frame_ready(self, frame_bgr, metrics):
+        if self.sender() is not self.worker:
+            return
         self.video_label.set_frame(frame_bgr)
         self.info_label.setText(self._format_video_info(metrics))
         status_text = metrics.get("status_text") or "Running"
@@ -512,14 +525,24 @@ class ElfVisionMain(QWidget):
         return " | ".join(parts)
 
     def on_worker_error(self, message):
+        if self.sender() is not self.worker:
+            return
         self.status_label.setText(message)
         self.video_label.set_message(message)
         QMessageBox.warning(self, "Task Error", message)
 
     def on_worker_status(self, message):
+        if self.sender() is not self.worker:
+            return
         self.status_label.setText(message)
 
     def on_worker_finished(self):
+        sender = self.sender()
+        if sender is not self.worker:
+            if sender in self.stopping_workers:
+                self.stopping_workers.remove(sender)
+            return
+        self.worker = None
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
