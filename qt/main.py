@@ -94,9 +94,11 @@ class ElfVisionMain(QWidget):
         self.odin_driver_process = None
         self.odin_bridge_process = None
         self.odin_bridge_buffer = ""
+        self.odin_widgets = []
         self.task_param_inputs = {}
         self.init_ui()
         self.refresh_task_params()
+        self.update_odin_visibility()
 
     def init_ui(self):
         self.setWindowTitle("ELF2 Vision Demo")
@@ -166,26 +168,27 @@ class ElfVisionMain(QWidget):
         self.resolution_combo.currentIndexChanged.connect(self.restart_if_running)
         controls.addWidget(self.resolution_combo)
 
-        controls.addWidget(self._section_label("Odin1 Position"))
+        self.odin_section_label = self._section_label("Odin1 Position")
+        self._add_odin_widget(controls, self.odin_section_label)
         self.odin_xyz_label = QLabel("X: -- | Y: -- | Z: --")
         self.odin_xyz_label.setStyleSheet(
             "background: #eef4f8; color: #17212b; padding: 8px; font-size: 13px;"
         )
-        controls.addWidget(self.odin_xyz_label)
+        self._add_odin_widget(controls, self.odin_xyz_label)
 
         self.odin_status_label = QLabel("Odin1: stopped")
         self.odin_status_label.setWordWrap(True)
         self.odin_status_label.setStyleSheet("color: #667684;")
-        controls.addWidget(self.odin_status_label)
+        self._add_odin_widget(controls, self.odin_status_label)
 
         self.odin_start_button = QPushButton("Start Odin1 Lite")
         self.odin_start_button.clicked.connect(self.start_odin1)
-        controls.addWidget(self.odin_start_button)
+        self._add_odin_widget(controls, self.odin_start_button)
 
         self.odin_stop_button = QPushButton("Stop Odin1")
         self.odin_stop_button.clicked.connect(self.stop_odin1)
         self.odin_stop_button.setEnabled(False)
-        controls.addWidget(self.odin_stop_button)
+        self._add_odin_widget(controls, self.odin_stop_button)
 
         controls.addWidget(self._section_label("Task Parameters"))
         self.param_container = QWidget()
@@ -229,6 +232,17 @@ class ElfVisionMain(QWidget):
         label = QLabel(text)
         label.setStyleSheet("font-size: 13px; font-weight: 700; color: #33414c;")
         return label
+
+    def _add_odin_widget(self, layout, widget):
+        self.odin_widgets.append(widget)
+        layout.addWidget(widget)
+
+    def update_odin_visibility(self):
+        visible = self.task_combo.currentData() == "passthrough"
+        if not visible and (self.odin_driver_process is not None or self.odin_bridge_process is not None):
+            self.stop_odin1()
+        for widget in self.odin_widgets:
+            widget.setVisible(visible)
 
     def _style_combo_popup(self, combo):
         combo.view().setTextElideMode(Qt.ElideNone)
@@ -371,6 +385,7 @@ class ElfVisionMain(QWidget):
             self.odin_stop_button.setEnabled(False)
 
     def on_task_changed(self):
+        self.update_odin_visibility()
         self.refresh_task_params()
         self.restart_if_running()
 
