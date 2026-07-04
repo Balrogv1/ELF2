@@ -146,69 +146,81 @@ class ElfVisionMain(QWidget):
         controls.setContentsMargins(14, 14, 14, 14)
         controls.setSpacing(10)
 
-        controls.addWidget(self._section_label("Task"))
+        self.top_controls_widget = QWidget()
+        top_controls = QVBoxLayout(self.top_controls_widget)
+        top_controls.setContentsMargins(0, 0, 0, 0)
+        top_controls.setSpacing(10)
+
+        top_controls.addWidget(self._section_label("Task"))
         self.task_combo = QComboBox()
         self._style_combo_popup(self.task_combo)
         for task_id, meta in TASKS.items():
             self.task_combo.addItem(meta["label"], task_id)
         self._fix_combo_item_colors(self.task_combo)
         self.task_combo.currentIndexChanged.connect(self.on_task_changed)
-        controls.addWidget(self.task_combo)
+        top_controls.addWidget(self.task_combo)
 
-        controls.addWidget(self._section_label("Camera"))
+        top_controls.addWidget(self._section_label("Camera"))
         self.camera_input = QLineEdit("21")
-        controls.addWidget(self.camera_input)
+        top_controls.addWidget(self.camera_input)
 
-        controls.addWidget(self._section_label("Resolution"))
+        top_controls.addWidget(self._section_label("Resolution"))
         self.resolution_combo = QComboBox()
         self._style_combo_popup(self.resolution_combo)
         for label in RESOLUTIONS:
             self.resolution_combo.addItem(label)
         self._fix_combo_item_colors(self.resolution_combo)
         self.resolution_combo.currentIndexChanged.connect(self.restart_if_running)
-        controls.addWidget(self.resolution_combo)
+        top_controls.addWidget(self.resolution_combo)
 
         self.odin_section_label = self._section_label("Odin1 Position")
-        self._add_odin_widget(controls, self.odin_section_label)
+        self._add_odin_widget(top_controls, self.odin_section_label)
         self.odin_xyz_label = QLabel("X: -- | Y: -- | Z: --")
         self.odin_xyz_label.setStyleSheet(
             "background: #eef4f8; color: #17212b; padding: 8px; font-size: 13px;"
         )
-        self._add_odin_widget(controls, self.odin_xyz_label)
+        self._add_odin_widget(top_controls, self.odin_xyz_label)
 
         self.odin_status_label = QLabel("Odin1: stopped")
         self.odin_status_label.setWordWrap(True)
         self.odin_status_label.setStyleSheet("color: #667684;")
-        self._add_odin_widget(controls, self.odin_status_label)
+        self._add_odin_widget(top_controls, self.odin_status_label)
 
         self.odin_start_button = QPushButton("Start Odin1 Lite")
         self.odin_start_button.clicked.connect(self.start_odin1)
-        self._add_odin_widget(controls, self.odin_start_button)
+        self._add_odin_widget(top_controls, self.odin_start_button)
 
         self.odin_stop_button = QPushButton("Stop Odin1")
         self.odin_stop_button.clicked.connect(self.stop_odin1)
         self.odin_stop_button.setEnabled(False)
-        self._add_odin_widget(controls, self.odin_stop_button)
+        self._add_odin_widget(top_controls, self.odin_stop_button)
 
-        controls.addWidget(self._section_label("Task Parameters"))
+        top_controls.addWidget(self._section_label("Task Parameters"))
         self.param_container = QWidget()
         self.param_box = QVBoxLayout()
         self.param_box.setContentsMargins(0, 0, 0, 0)
         self.param_box.setSpacing(8)
         self.param_container.setLayout(self.param_box)
+        top_controls.addWidget(self.param_container)
+        top_controls.addStretch(1)
 
-        self.param_scroll = QScrollArea()
-        self.param_scroll.setWidgetResizable(True)
-        self.param_scroll.setFrameShape(QFrame.NoFrame)
-        self.param_scroll.setMinimumHeight(120)
-        self.param_scroll.setMaximumHeight(260)
-        self.param_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.param_scroll.setWidget(self.param_container)
-        self.param_scroll.setStyleSheet(
+        self.top_controls_scroll = QScrollArea()
+        self.top_controls_scroll.setWidgetResizable(True)
+        self.top_controls_scroll.setFrameShape(QFrame.NoFrame)
+        self.top_controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.top_controls_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.top_controls_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.top_controls_scroll.setWidget(self.top_controls_widget)
+        self.top_controls_scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: 0; }"
             "QScrollArea QWidget { background: transparent; }"
         )
-        controls.addWidget(self.param_scroll, stretch=1)
+        controls.addWidget(self.top_controls_scroll, stretch=1)
+
+        self.status_label = QLabel("Ready")
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("color: #5d6b76; border: 0; background: transparent;")
+        controls.addWidget(self.status_label)
 
         self.start_button = QPushButton("Start")
         self.start_button.clicked.connect(self.start_current_task)
@@ -218,12 +230,6 @@ class ElfVisionMain(QWidget):
         self.stop_button.clicked.connect(self.stop_worker)
         self.stop_button.setEnabled(False)
         controls.addWidget(self.stop_button)
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet("color: #5d6b76; border: 0; background: transparent;")
-        controls.addWidget(self.status_label)
-        controls.addStretch(1)
 
         root_layout.addLayout(left_panel, stretch=3)
         root_layout.addWidget(right_panel, stretch=1)
