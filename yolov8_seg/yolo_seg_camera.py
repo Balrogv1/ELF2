@@ -396,8 +396,6 @@ def main():
             post_ms = (post_end - post_start) * 1000.0
             current_fps = 1.0 / frame_time if frame_time > 0 else 0.0
             fps_smooth = current_fps if fps_smooth is None else 0.9 * fps_smooth + 0.1 * current_fps
-
-            put_status(show_frame, fps_smooth, infer_ms, post_ms, det_num)
             sys.stdout.write(
                 "\rFPS: {:6.2f} | Infer: {:6.1f} ms | Post: {:6.1f} ms | Detections: {:3d}".format(
                     fps_smooth, infer_ms, post_ms, det_num

@@ -16,6 +16,26 @@ TASKS = {
             "model_path": "",
         },
     },
+    "pose": {
+        "label": "YOLOv8 Pose",
+        "module": "tasks.task_pose",
+        "class": "YoloPoseTask",
+        "params": {
+            "model_path": "",
+            "core": "auto",
+        },
+    },
+    "seg": {
+        "label": "YOLOv8 Segmentation",
+        "module": "tasks.task_seg",
+        "class": "YoloSegTask",
+        "params": {
+            "model_path": "",
+            "core": "auto",
+            "no_mask": "false",
+            "mask_alpha": "0.45",
+        },
+    },
     "litemono": {
         "label": "Lite-Mono Depth",
         "module": "tasks.task_litemono",

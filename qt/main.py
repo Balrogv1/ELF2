@@ -463,9 +463,17 @@ class ElfVisionMain(QWidget):
         if infer_ms is not None:
             parts.append("Infer: {:.1f} ms".format(infer_ms))
 
+        post_ms = metrics.get("post_ms")
+        if post_ms is not None:
+            parts.append("Post: {:.1f} ms".format(post_ms))
+
         detections = metrics.get("detections")
         if detections is not None:
             parts.append("Detections: {}".format(detections))
+
+        persons = metrics.get("persons")
+        if persons is not None:
+            parts.append("Persons: {}".format(persons))
 
         disp_min = metrics.get("disp_min")
         disp_max = metrics.get("disp_max")

@@ -12,6 +12,8 @@
 | `qt/odin1_odom_bridge.py` | ROS2 bridge，订阅 `/odin1/odometry` 并把 XYZ 输出给 Qt |
 | `yolo_python/` | YOLOv8 RKNN USB 摄像头检测脚本 |
 | `litemono-python/` | Lite-Mono RKNN 单目深度/视差估计脚本 |
+| `yolov8_pose/` | YOLOv8 Pose RKNN 姿态估计脚本和模型 |
+| `yolov8_seg/` | YOLOv8 Seg RKNN 实例分割脚本和模型 |
 | `yolov8-world/` | YOLO-World Lite RKNN 示例和 tokenizer 文件 |
 | `FUNCTIONS.md` | 更详细的功能目录说明 |
 
@@ -36,6 +38,13 @@ python3 main.py
 
 复用 `yolo_python/usb_yolov8_camera.py` 的预处理、RKNN 推理、后处理和绘框逻辑。UI 中显示检测后的摄像头画面，底部状态栏动态显示 FPS、分辨率、推理耗时和检测数量。
 
+### YOLOv8 Pose
+
+复用 `yolov8_pose/yolo_pose_camera.py` 的 RKNN 推理和关键点绘制逻辑。UI 中显示人体框和骨架关键点，底部状态栏动态显示 FPS、分辨率、推理耗时、后处理耗时和人数。
+
+### YOLOv8 Segmentation
+
+复用 `yolov8_seg/yolo_seg_camera.py` 的 RKNN 推理、mask 后处理、mask 叠加和检测框绘制逻辑。UI 中显示实例分割结果，任务参数支持 `no_mask` 和 `mask_alpha`。
 ### Lite-Mono Depth
 
 复用 `litemono-python/usb_litemono_camera.py` 的 Lite-Mono RKNN 推理逻辑。输入普通单目摄像头画面，输出相对深度/视差图，并与原图左右拼接显示。
