@@ -30,7 +30,8 @@ class VideoWorker(QThread):
                 loop_start = time.perf_counter()
                 ret, frame = self.cap.read()
                 if not ret or frame is None:
-                    self.error.emit("Read camera frame failed")
+                    if self._running:
+                        self.error.emit("Read camera frame failed")
                     break
 
                 result = self.task.process(frame)
@@ -52,7 +53,8 @@ class VideoWorker(QThread):
                 self.frame_ready.emit(result.frame_bgr, metrics)
 
         except Exception as exc:
-            self.error.emit(str(exc))
+            if self._running:
+                self.error.emit(str(exc))
         finally:
             self._release()
 
