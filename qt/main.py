@@ -140,7 +140,7 @@ class ElfVisionMain(QWidget):
             "QComboBox QAbstractItemView::item:selected:hover { background: #c7daec; color: #17212b; }"
             "QPushButton { padding: 10px; font-weight: 600; border: 0; background: #1f6feb; color: white; }"
             "QPushButton:hover { background: #185abc; color: white; }"
-            "QPushButton:disabled { background: #9aa8b5; }"
+            "QPushButton:disabled { background: #9aa8b5; color: #eef3f7; }"
         )
         controls = QVBoxLayout(right_panel)
         controls.setContentsMargins(14, 14, 14, 14)
@@ -187,10 +187,12 @@ class ElfVisionMain(QWidget):
         self._add_odin_widget(top_controls, self.odin_status_label)
 
         self.odin_start_button = QPushButton("Start Odin1 Lite")
+        self.odin_start_button.setStyleSheet(self._button_style())
         self.odin_start_button.clicked.connect(self.start_odin1)
         self._add_odin_widget(top_controls, self.odin_start_button)
 
         self.odin_stop_button = QPushButton("Stop Odin1")
+        self.odin_stop_button.setStyleSheet(self._button_style())
         self.odin_stop_button.clicked.connect(self.stop_odin1)
         self.odin_stop_button.setEnabled(False)
         self._add_odin_widget(top_controls, self.odin_stop_button)
@@ -234,6 +236,12 @@ class ElfVisionMain(QWidget):
         root_layout.addLayout(left_panel, stretch=3)
         root_layout.addWidget(right_panel, stretch=1)
 
+    def _button_style(self):
+        return (
+            "QPushButton { padding: 10px; font-weight: 600; border: 0; background: #1f6feb; color: white; }"
+            "QPushButton:hover { background: #185abc; color: white; }"
+            "QPushButton:disabled { background: #9aa8b5; color: #eef3f7; }"
+        )
     def _section_label(self, text):
         label = QLabel(text)
         label.setStyleSheet("font-size: 13px; font-weight: 700; color: #33414c;")
