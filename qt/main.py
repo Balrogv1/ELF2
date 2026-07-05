@@ -259,8 +259,6 @@ class ElfVisionMain(QWidget):
 
     def update_odin_visibility(self):
         visible = self.task_combo.currentData() == "passthrough"
-        if not visible and (self.odin_driver_process is not None or self.odin_bridge_process is not None):
-            self.stop_odin1()
         for widget in self.odin_widgets:
             widget.setVisible(visible)
 
