@@ -24,7 +24,7 @@ def configure_qt_plugins():
 configure_qt_plugins()
 
 from PyQt5.QtCore import QProcess, Qt
-from PyQt5.QtGui import QColor, QImage, QPixmap
+from PyQt5.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -54,13 +54,15 @@ class VideoLabel(QLabel):
     def __init__(self):
         super().__init__()
         self._pixmap = None
+        self._message = None
         self.setAlignment(Qt.AlignCenter)
-        self.setText("Select a task and press Start")
         self.setStyleSheet("background: #101418; color: #9fb0bf; font-size: 22px;")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumSize(640, 360)
+        self.set_idle_message()
 
     def set_frame(self, frame_bgr):
+        self._message = None
         rgb = frame_bgr[:, :, ::-1].copy()
         h, w, ch = rgb.shape
         image = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
@@ -69,15 +71,33 @@ class VideoLabel(QLabel):
 
     def set_message(self, message):
         self._pixmap = None
-        self.clear()
-        self.setText(message)
+        self._message = message
+        self._render_message_pixmap()
 
     def set_idle_message(self):
         self.set_message("Select a task and press Start")
 
+    def is_showing_frame(self):
+        return self._message is None and self._pixmap is not None
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._update_pixmap()
+        if self._message is not None:
+            self._render_message_pixmap()
+        else:
+            self._update_pixmap()
+
+    def _render_message_pixmap(self):
+        width = max(self.width(), self.minimumWidth(), 1)
+        height = max(self.height(), self.minimumHeight(), 1)
+        pixmap = QPixmap(width, height)
+        pixmap.fill(QColor("#101418"))
+        painter = QPainter(pixmap)
+        painter.setPen(QColor("#9fb0bf"))
+        painter.setFont(self.font())
+        painter.drawText(0, 0, width, height, Qt.AlignCenter, self._message or "")
+        painter.end()
+        self.setPixmap(pixmap)
 
     def _update_pixmap(self):
         if self._pixmap is None:
@@ -485,7 +505,7 @@ class ElfVisionMain(QWidget):
         }
 
     def start_current_task(self):
-        self.stop_worker()
+        self.stop_worker(show_idle=False)
         task_id = self.task_combo.currentData()
         task_cls = get_task_class(task_id)
         config = self.build_config()
@@ -500,12 +520,14 @@ class ElfVisionMain(QWidget):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.status_label.setText("Starting...")
-        self.video_label.set_message("Starting camera and task...")
+        if not self.video_label.is_showing_frame():
+            self.video_label.set_message("Starting camera and task...")
 
-    def stop_worker(self):
+    def stop_worker(self, show_idle=True):
         worker = self.worker
         self.worker = None
-        self.video_label.set_idle_message()
+        if show_idle:
+            self.video_label.set_idle_message()
         self.info_label.setText("Task: stopped | FPS: -- | Resolution: --")
         self.status_label.setText("Stopped")
         if worker is not None and not worker.stop():
