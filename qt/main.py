@@ -631,6 +631,8 @@ class ElfVisionMain(QWidget):
         if worker is not None:
             self._disconnect_worker(worker)
         if show_idle:
+            if self.mobile_stream is not None:
+                self.mobile_stream.blackout()
             self.video_label.set_blackout()
             QApplication.processEvents()
         self.info_label.setText("Task: stopped | FPS: -- | Resolution: --")
