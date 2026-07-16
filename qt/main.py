@@ -287,8 +287,6 @@ class ElfVisionMain(QWidget):
         visible = self.task_combo.currentData() == "passthrough"
         for widget in self.odin_widgets:
             widget.setVisible(visible)
-        if visible and self.odin_driver_process is not None:
-            self._ensure_odin_rviz()
 
     def _style_combo_popup(self, combo):
         combo.view().setTextElideMode(Qt.ElideNone)
@@ -350,7 +348,9 @@ class ElfVisionMain(QWidget):
 
     def _ensure_odin_rviz(self):
         if self.odin_rviz_process is not None:
-            return
+            if self.odin_rviz_process.state() != QProcess.NotRunning:
+                return
+            self.odin_rviz_process = None
         self.odin_rviz_process = self._start_shell_process(
             self._odin_rviz_command(),
             self.on_odin_rviz_output,
@@ -398,8 +398,6 @@ class ElfVisionMain(QWidget):
             "source ~/odin1/install/setup.bash; "
             "if command -v wmctrl >/dev/null 2>&1 && wmctrl -a RViz >/dev/null 2>&1; then "
             "echo 'RViz window raised'; "
-            "elif ! command -v wmctrl >/dev/null 2>&1 && pgrep -x rviz2 >/dev/null; then "
-            "echo 'RViz already running'; "
             "else "
             "cfg=$(find ~/odin1 -name '*lite*.rviz' -print -quit 2>/dev/null); "
             "if [ -n \"$cfg\" ]; then "
