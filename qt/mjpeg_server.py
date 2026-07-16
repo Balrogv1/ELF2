@@ -19,6 +19,7 @@ class MjpegServer:
         self._sequence = 0
         self._clients = 0
         self._metrics = {}
+        self._frame_shape = None
         self._stopping = False
 
     @property
@@ -65,9 +66,30 @@ class MjpegServer:
     def publish(self, frame_bgr, metrics):
         with self._condition:
             self._metrics = dict(metrics)
+            self._frame_shape = frame_bgr.shape
             if not self.is_running or self._clients == 0:
                 return
             self._pending_frame = frame_bgr.copy()
+            self._condition.notify_all()
+
+    def blackout(self):
+        with self._condition:
+            shape = self._frame_shape or (480, 640, 3)
+            self._metrics = {
+                "task_name": "stopped",
+                "fps": 0.0,
+                "width": shape[1],
+                "height": shape[0],
+            }
+            if not self.is_running or self._clients == 0:
+                return
+        import numpy as np
+
+        frame = np.zeros(shape, dtype=np.uint8)
+        with self._condition:
+            if not self.is_running or self._clients == 0:
+                return
+            self._pending_frame = frame
             self._condition.notify_all()
 
     def local_url(self):
