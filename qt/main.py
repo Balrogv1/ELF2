@@ -77,6 +77,9 @@ class VideoLabel(QLabel):
     def set_idle_message(self):
         self.set_message("Select a task and press Start")
 
+    def set_blackout(self):
+        self.set_message("")
+
     def is_showing_frame(self):
         return self._message is None and self._pixmap is not None
 
@@ -532,13 +535,16 @@ class ElfVisionMain(QWidget):
         if worker is not None:
             self._disconnect_worker(worker)
         if show_idle:
-            self.video_label.set_idle_message()
+            self.video_label.set_blackout()
             QApplication.processEvents()
         self.info_label.setText("Task: stopped | FPS: -- | Resolution: --")
         self.status_label.setText("Stopped")
         if worker is not None and not worker.stop():
             self.stopping_workers.append(worker)
             self.status_label.setText("Stopping...")
+        if show_idle:
+            self.video_label.set_blackout()
+            QApplication.processEvents()
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
