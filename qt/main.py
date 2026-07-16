@@ -42,6 +42,7 @@ from PyQt5.QtWidgets import (
 )
 
 from task_registry import TASKS, get_task_class
+from mjpeg_server import MjpegServer
 from video_worker import VideoWorker
 
 
@@ -127,6 +128,7 @@ class ElfVisionMain(QWidget):
         self.odin_rviz_process = None
         self.odin_bridge_buffer = ""
         self.odin_widgets = []
+        self.mobile_stream = None
         self.task_param_inputs = {}
         self.init_ui()
         self.refresh_task_params()
@@ -236,6 +238,25 @@ class ElfVisionMain(QWidget):
         self.param_box.setSpacing(8)
         self.param_container.setLayout(self.param_box)
         top_controls.addWidget(self.param_container)
+
+        top_controls.addWidget(self._section_label("Mobile View"))
+        self.mobile_port_input = QLineEdit("8080")
+        self.mobile_port_input.setPlaceholderText("HTTP port")
+        top_controls.addWidget(self.mobile_port_input)
+
+        self.mobile_url_label = QLabel("Mobile view: stopped")
+        self.mobile_url_label.setWordWrap(True)
+        self.mobile_url_label.setStyleSheet("color: #667684;")
+        top_controls.addWidget(self.mobile_url_label)
+
+        self.mobile_start_button = QPushButton("Start Mobile View")
+        self.mobile_start_button.clicked.connect(self.start_mobile_stream)
+        top_controls.addWidget(self.mobile_start_button)
+
+        self.mobile_stop_button = QPushButton("Stop Mobile View")
+        self.mobile_stop_button.clicked.connect(self.stop_mobile_stream)
+        self.mobile_stop_button.setEnabled(False)
+        top_controls.addWidget(self.mobile_stop_button)
         top_controls.addStretch(1)
 
         self.top_controls_scroll = QScrollArea()
@@ -282,6 +303,34 @@ class ElfVisionMain(QWidget):
     def _add_odin_widget(self, layout, widget):
         self.odin_widgets.append(widget)
         layout.addWidget(widget)
+
+    def start_mobile_stream(self):
+        if self.mobile_stream is not None:
+            return
+        try:
+            port = int(self.mobile_port_input.text().strip() or "8080")
+            if not 1 <= port <= 65535:
+                raise ValueError("Port must be between 1 and 65535")
+            stream = MjpegServer(port=port)
+            stream.start()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Mobile View Error", str(exc))
+            return
+        self.mobile_stream = stream
+        self.mobile_port_input.setEnabled(False)
+        self.mobile_start_button.setEnabled(False)
+        self.mobile_stop_button.setEnabled(True)
+        self.mobile_url_label.setText(stream.local_url())
+
+    def stop_mobile_stream(self):
+        stream = self.mobile_stream
+        self.mobile_stream = None
+        if stream is not None:
+            stream.stop()
+        self.mobile_port_input.setEnabled(True)
+        self.mobile_start_button.setEnabled(True)
+        self.mobile_stop_button.setEnabled(False)
+        self.mobile_url_label.setText("Mobile view: stopped")
 
     def update_odin_visibility(self):
         visible = self.task_combo.currentData() == "passthrough"
@@ -607,6 +656,8 @@ class ElfVisionMain(QWidget):
     def on_frame_ready(self, frame_bgr, metrics):
         if self.sender() is not self.worker:
             return
+        if self.mobile_stream is not None:
+            self.mobile_stream.publish(frame_bgr, metrics)
         self.video_label.set_frame(frame_bgr)
         self.info_label.setText(self._format_video_info(metrics))
         status_text = metrics.get("status_text") or "Running"
@@ -671,6 +722,7 @@ class ElfVisionMain(QWidget):
         self.stop_button.setEnabled(False)
 
     def closeEvent(self, event):
+        self.stop_mobile_stream()
         self.stop_odin1()
         self.stop_worker()
         event.accept()
