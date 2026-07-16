@@ -331,7 +331,7 @@ class ElfVisionMain(QWidget):
             QMessageBox.warning(self, "Odin1 Error", str(exc))
             return
 
-        self.odin_start_button.setEnabled(False)
+        self.odin_start_button.setEnabled(True)
         self.odin_stop_button.setEnabled(True)
         self.odin_status_label.setText("Odin1: starting lite driver...")
 
@@ -398,6 +398,8 @@ class ElfVisionMain(QWidget):
             "source ~/odin1/install/setup.bash; "
             "if command -v wmctrl >/dev/null 2>&1 && wmctrl -a RViz >/dev/null 2>&1; then "
             "echo 'RViz window raised'; "
+            "elif pgrep -x rviz2 >/dev/null 2>&1; then "
+            "echo 'RViz already running'; "
             "else "
             "cfg=$(find ~/odin1 -name '*lite*.rviz' -print -quit 2>/dev/null); "
             "if [ -n \"$cfg\" ]; then "
