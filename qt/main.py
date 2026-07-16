@@ -419,31 +419,28 @@ class ElfVisionMain(QWidget):
         )
 
     def on_odin_driver_output(self):
-        if self.odin_driver_process is None:
+        process = self.sender()
+        if process is not self.odin_driver_process:
             return
-        text = bytes(self.odin_driver_process.readAllStandardOutput()).decode(
-            errors="replace"
-        )
+        text = bytes(process.readAllStandardOutput()).decode(errors="replace")
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if lines:
             self.odin_status_label.setText("Odin1: {}".format(lines[-1][-120:]))
 
     def on_odin_rviz_output(self):
-        if self.odin_rviz_process is None:
+        process = self.sender()
+        if process is not self.odin_rviz_process:
             return
-        text = bytes(self.odin_rviz_process.readAllStandardOutput()).decode(
-            errors="replace"
-        )
+        text = bytes(process.readAllStandardOutput()).decode(errors="replace")
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if lines:
             self.odin_status_label.setText("RViz: {}".format(lines[-1][-120:]))
 
     def on_odin_bridge_output(self):
-        if self.odin_bridge_process is None:
+        process = self.sender()
+        if process is not self.odin_bridge_process:
             return
-        text = bytes(self.odin_bridge_process.readAllStandardOutput()).decode(
-            errors="replace"
-        )
+        text = bytes(process.readAllStandardOutput()).decode(errors="replace")
         self.odin_bridge_buffer += text
         while "\n" in self.odin_bridge_buffer:
             line, self.odin_bridge_buffer = self.odin_bridge_buffer.split("\n", 1)
@@ -467,15 +464,21 @@ class ElfVisionMain(QWidget):
             self.odin_status_label.setText("Odin1: receiving /odin1/odometry")
 
     def on_odin_driver_finished(self, *args):
+        if self.sender() is not self.odin_driver_process:
+            return
         self.odin_driver_process = None
         if self.odin_bridge_process is None:
             self.odin_start_button.setEnabled(True)
             self.odin_stop_button.setEnabled(False)
 
     def on_odin_rviz_finished(self, *args):
+        if self.sender() is not self.odin_rviz_process:
+            return
         self.odin_rviz_process = None
 
     def on_odin_bridge_finished(self, *args):
+        if self.sender() is not self.odin_bridge_process:
+            return
         self.odin_bridge_process = None
         if self.odin_driver_process is None:
             self.odin_start_button.setEnabled(True)
