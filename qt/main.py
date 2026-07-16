@@ -97,7 +97,10 @@ class VideoLabel(QLabel):
         painter.setFont(self.font())
         painter.drawText(0, 0, width, height, Qt.AlignCenter, self._message or "")
         painter.end()
+        self.clear()
+        self.setText("")
         self.setPixmap(pixmap)
+        self.repaint()
 
     def _update_pixmap(self):
         if self._pixmap is None:
@@ -526,8 +529,11 @@ class ElfVisionMain(QWidget):
     def stop_worker(self, show_idle=True):
         worker = self.worker
         self.worker = None
+        if worker is not None:
+            self._disconnect_worker(worker)
         if show_idle:
             self.video_label.set_idle_message()
+            QApplication.processEvents()
         self.info_label.setText("Task: stopped | FPS: -- | Resolution: --")
         self.status_label.setText("Stopped")
         if worker is not None and not worker.stop():
@@ -536,6 +542,16 @@ class ElfVisionMain(QWidget):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
+    def _disconnect_worker(self, worker):
+        for signal, slot in (
+            (worker.frame_ready, self.on_frame_ready),
+            (worker.error, self.on_worker_error),
+            (worker.status, self.on_worker_status),
+        ):
+            try:
+                signal.disconnect(slot)
+            except TypeError:
+                pass
     def restart_if_running(self):
         if self.worker is not None and self.worker.isRunning():
             self.start_current_task()
