@@ -254,13 +254,11 @@ class ElfVisionMain(QWidget):
         self.mobile_start_button = QPushButton("Start Mobile View")
         self.mobile_start_button.setStyleSheet(self._button_style())
         self.mobile_start_button.clicked.connect(self.start_mobile_stream)
-        top_controls.addWidget(self.mobile_start_button)
 
         self.mobile_stop_button = QPushButton("Stop Mobile View")
         self.mobile_stop_button.setStyleSheet(self._button_style())
         self.mobile_stop_button.clicked.connect(self.stop_mobile_stream)
         self.mobile_stop_button.setEnabled(False)
-        top_controls.addWidget(self.mobile_stop_button)
         top_controls.addStretch(1)
 
         self.top_controls_scroll = QScrollArea()
@@ -280,6 +278,9 @@ class ElfVisionMain(QWidget):
         self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet("color: #5d6b76; border: 0; background: transparent;")
         controls.addWidget(self.status_label)
+
+        controls.addWidget(self.mobile_start_button)
+        controls.addWidget(self.mobile_stop_button)
 
         self.start_button = QPushButton("Start")
         self.start_button.clicked.connect(self.start_current_task)
