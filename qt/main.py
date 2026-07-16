@@ -69,13 +69,11 @@ class VideoLabel(QLabel):
 
     def set_message(self, message):
         self._pixmap = None
-        self.setPixmap(QPixmap())
+        self.clear()
         self.setText(message)
 
-    def set_blackout(self):
-        self._pixmap = None
-        self.setPixmap(QPixmap())
-        self.setText("")
+    def set_idle_message(self):
+        self.set_message("Select a task and press Start")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -507,7 +505,7 @@ class ElfVisionMain(QWidget):
     def stop_worker(self):
         worker = self.worker
         self.worker = None
-        self.video_label.set_blackout()
+        self.video_label.set_idle_message()
         self.info_label.setText("Task: stopped | FPS: -- | Resolution: --")
         self.status_label.setText("Stopped")
         if worker is not None and not worker.stop():
