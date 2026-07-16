@@ -24,7 +24,7 @@ def configure_qt_plugins():
 
 configure_qt_plugins()
 
-from PyQt5.QtCore import QProcess, QTimer, Qt
+from PyQt5.QtCore import QProcess, QProcessEnvironment, QTimer, Qt
 from PyQt5.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
@@ -310,6 +310,7 @@ class ElfVisionMain(QWidget):
     def start_odin1(self):
         if self.odin_driver_process is not None:
             self._ensure_odin_rviz()
+            self._schedule_odin_rviz_check(self.odin_driver_process)
             self.odin_status_label.setText("Odin1: already running, ensuring RViz...")
             return
 
@@ -326,11 +327,7 @@ class ElfVisionMain(QWidget):
                 self.on_odin_bridge_output,
                 self.on_odin_bridge_finished,
             )
-            driver_process = self.odin_driver_process
-            QTimer.singleShot(
-                3000,
-                lambda: self._ensure_odin_rviz_for_driver(driver_process),
-            )
+            self._schedule_odin_rviz_check(self.odin_driver_process)
         except Exception as exc:
             self.stop_odin1()
             QMessageBox.warning(self, "Odin1 Error", str(exc))
@@ -369,8 +366,22 @@ class ElfVisionMain(QWidget):
             return
         self._ensure_odin_rviz()
 
+    def _schedule_odin_rviz_check(self, driver_process):
+        QTimer.singleShot(
+            3000,
+            lambda: self._ensure_odin_rviz_for_driver(driver_process),
+        )
+
     def _start_shell_process(self, command, output_slot, finished_slot):
         process = QProcess(self)
+        environment = QProcessEnvironment.systemEnvironment()
+        for variable in (
+            "QT_PLUGIN_PATH",
+            "QT_QPA_PLATFORM_PLUGIN_PATH",
+            "QT_QPA_FONTDIR",
+        ):
+            environment.remove(variable)
+        process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.MergedChannels)
         process.readyReadStandardOutput.connect(output_slot)
         process.finished.connect(finished_slot)
@@ -413,7 +424,10 @@ class ElfVisionMain(QWidget):
             "elif pgrep -x rviz2 >/dev/null 2>&1; then "
             "echo 'RViz already running'; "
             "else "
+            "cfg=~/odin1/install/odin_ros_driver/share/odin_ros_driver/config/odin_ros2_lite.rviz; "
+            "if [ ! -f \"$cfg\" ]; then "
             "cfg=$(find ~/odin1 -name '*lite*.rviz' -print -quit 2>/dev/null); "
+            "fi; "
             "if [ -n \"$cfg\" ]; then "
             "exec ros2 run rviz2 rviz2 -d \"$cfg\"; "
             "else "
