@@ -260,7 +260,7 @@ class ElfVisionMain(QWidget):
         controls.addWidget(self.start_button)
 
         self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.stop_worker)
+        self.stop_button.clicked.connect(lambda: self.stop_worker(show_idle=True))
         self.stop_button.setEnabled(False)
         controls.addWidget(self.stop_button)
 
