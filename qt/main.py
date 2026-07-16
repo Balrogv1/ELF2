@@ -2,6 +2,7 @@ import importlib
 import json
 import os
 import shlex
+import signal
 import sys
 from pathlib import Path
 
@@ -286,6 +287,8 @@ class ElfVisionMain(QWidget):
         visible = self.task_combo.currentData() == "passthrough"
         for widget in self.odin_widgets:
             widget.setVisible(visible)
+        if visible and self.odin_driver_process is not None:
+            self._ensure_odin_rviz()
 
     def _style_combo_popup(self, combo):
         combo.view().setTextElideMode(Qt.ElideNone)
@@ -359,7 +362,7 @@ class ElfVisionMain(QWidget):
         process.setProcessChannelMode(QProcess.MergedChannels)
         process.readyReadStandardOutput.connect(output_slot)
         process.finished.connect(finished_slot)
-        process.start("bash", ["-lc", command])
+        process.start("setsid", ["bash", "-lc", command])
         if not process.waitForStarted(3000):
             raise RuntimeError("Failed to start process: {}".format(command))
         return process
@@ -367,11 +370,19 @@ class ElfVisionMain(QWidget):
     def _stop_process(self, process):
         if process is None:
             return
-        if process.state() != QProcess.NotRunning:
+        if process.state() == QProcess.NotRunning:
+            return
+        pid = int(process.processId())
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except OSError:
             process.terminate()
-            if not process.waitForFinished(3000):
+        if not process.waitForFinished(3000):
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except OSError:
                 process.kill()
-                process.waitForFinished(1000)
+            process.waitForFinished(1000)
 
     def _odin_driver_command(self):
         return (
@@ -387,6 +398,8 @@ class ElfVisionMain(QWidget):
             "source ~/odin1/install/setup.bash; "
             "if command -v wmctrl >/dev/null 2>&1 && wmctrl -a RViz >/dev/null 2>&1; then "
             "echo 'RViz window raised'; "
+            "elif ! command -v wmctrl >/dev/null 2>&1 && pgrep -x rviz2 >/dev/null; then "
+            "echo 'RViz already running'; "
             "else "
             "cfg=$(find ~/odin1 -name '*lite*.rviz' -print -quit 2>/dev/null); "
             "if [ -n \"$cfg\" ]; then "
