@@ -301,7 +301,6 @@ class ElfVisionMain(QWidget):
                 self.on_odin_bridge_output,
                 self.on_odin_bridge_finished,
             )
-            self._ensure_odin_rviz()
         except Exception as exc:
             self.stop_odin1()
             QMessageBox.warning(self, "Odin1 Error", str(exc))
@@ -309,7 +308,7 @@ class ElfVisionMain(QWidget):
 
         self.odin_start_button.setEnabled(False)
         self.odin_stop_button.setEnabled(True)
-        self.odin_status_label.setText("Odin1: starting lite driver and RViz...")
+        self.odin_status_label.setText("Odin1: starting lite driver...")
 
     def stop_odin1(self):
         self._stop_process(self.odin_bridge_process)
