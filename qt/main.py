@@ -99,6 +99,7 @@ class ElfVisionMain(QWidget):
         self.stopping_workers = []
         self.odin_driver_process = None
         self.odin_bridge_process = None
+        self.odin_rviz_process = None
         self.odin_bridge_buffer = ""
         self.odin_widgets = []
         self.task_param_inputs = {}
@@ -283,7 +284,8 @@ class ElfVisionMain(QWidget):
 
     def start_odin1(self):
         if self.odin_driver_process is not None:
-            self.odin_status_label.setText("Odin1: already running")
+            self._ensure_odin_rviz()
+            self.odin_status_label.setText("Odin1: already running, ensuring RViz...")
             return
 
         try:
@@ -299,6 +301,7 @@ class ElfVisionMain(QWidget):
                 self.on_odin_bridge_output,
                 self.on_odin_bridge_finished,
             )
+            self._ensure_odin_rviz()
         except Exception as exc:
             self.stop_odin1()
             QMessageBox.warning(self, "Odin1 Error", str(exc))
@@ -306,16 +309,27 @@ class ElfVisionMain(QWidget):
 
         self.odin_start_button.setEnabled(False)
         self.odin_stop_button.setEnabled(True)
-        self.odin_status_label.setText("Odin1: starting lite driver...")
+        self.odin_status_label.setText("Odin1: starting lite driver and RViz...")
 
     def stop_odin1(self):
         self._stop_process(self.odin_bridge_process)
+        self._stop_process(self.odin_rviz_process)
         self._stop_process(self.odin_driver_process)
         self.odin_bridge_process = None
+        self.odin_rviz_process = None
         self.odin_driver_process = None
         self.odin_start_button.setEnabled(True)
         self.odin_stop_button.setEnabled(False)
         self.odin_status_label.setText("Odin1: stopped")
+
+    def _ensure_odin_rviz(self):
+        if self.odin_rviz_process is not None:
+            return
+        self.odin_rviz_process = self._start_shell_process(
+            self._odin_rviz_command(),
+            self.on_odin_rviz_output,
+            self.on_odin_rviz_finished,
+        )
 
     def _start_shell_process(self, command, output_slot, finished_slot):
         process = QProcess(self)
@@ -344,6 +358,22 @@ class ElfVisionMain(QWidget):
             "exec ros2 launch odin_ros_driver odin1_ros2_lite.launch.py"
         )
 
+    def _odin_rviz_command(self):
+        return (
+            "source /opt/ros/humble/setup.bash; "
+            "source ~/odin1/install/setup.bash; "
+            "if command -v wmctrl >/dev/null 2>&1 && wmctrl -a RViz >/dev/null 2>&1; then "
+            "echo 'RViz window raised'; "
+            "else "
+            "cfg=$(find ~/odin1 -name '*lite*.rviz' -print -quit 2>/dev/null); "
+            "if [ -n \"$cfg\" ]; then "
+            "exec ros2 run rviz2 rviz2 -d \"$cfg\"; "
+            "else "
+            "exec ros2 run rviz2 rviz2; "
+            "fi; "
+            "fi"
+        )
+
     def _odin_bridge_command(self):
         bridge_path = Path(__file__).resolve().parent / "odin1_odom_bridge.py"
         return (
@@ -361,6 +391,16 @@ class ElfVisionMain(QWidget):
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if lines:
             self.odin_status_label.setText("Odin1: {}".format(lines[-1][-120:]))
+
+    def on_odin_rviz_output(self):
+        if self.odin_rviz_process is None:
+            return
+        text = bytes(self.odin_rviz_process.readAllStandardOutput()).decode(
+            errors="replace"
+        )
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            self.odin_status_label.setText("RViz: {}".format(lines[-1][-120:]))
 
     def on_odin_bridge_output(self):
         if self.odin_bridge_process is None:
@@ -395,6 +435,9 @@ class ElfVisionMain(QWidget):
         if self.odin_bridge_process is None:
             self.odin_start_button.setEnabled(True)
             self.odin_stop_button.setEnabled(False)
+
+    def on_odin_rviz_finished(self, *args):
+        self.odin_rviz_process = None
 
     def on_odin_bridge_finished(self, *args):
         self.odin_bridge_process = None
