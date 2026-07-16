@@ -246,14 +246,18 @@ class ElfVisionMain(QWidget):
 
         self.mobile_url_label = QLabel("Mobile view: stopped")
         self.mobile_url_label.setWordWrap(True)
-        self.mobile_url_label.setStyleSheet("color: #667684;")
+        self.mobile_url_label.setStyleSheet(
+            "background: #eef4f8; color: #17212b; padding: 8px; font-size: 13px;"
+        )
         top_controls.addWidget(self.mobile_url_label)
 
         self.mobile_start_button = QPushButton("Start Mobile View")
+        self.mobile_start_button.setStyleSheet(self._button_style())
         self.mobile_start_button.clicked.connect(self.start_mobile_stream)
         top_controls.addWidget(self.mobile_start_button)
 
         self.mobile_stop_button = QPushButton("Stop Mobile View")
+        self.mobile_stop_button.setStyleSheet(self._button_style())
         self.mobile_stop_button.clicked.connect(self.stop_mobile_stream)
         self.mobile_stop_button.setEnabled(False)
         top_controls.addWidget(self.mobile_stop_button)
