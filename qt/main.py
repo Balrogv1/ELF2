@@ -24,7 +24,7 @@ def configure_qt_plugins():
 
 configure_qt_plugins()
 
-from PyQt5.QtCore import QProcess, Qt
+from PyQt5.QtCore import QProcess, QTimer, Qt
 from PyQt5.QtGui import QColor, QImage, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
@@ -326,6 +326,11 @@ class ElfVisionMain(QWidget):
                 self.on_odin_bridge_output,
                 self.on_odin_bridge_finished,
             )
+            driver_process = self.odin_driver_process
+            QTimer.singleShot(
+                3000,
+                lambda: self._ensure_odin_rviz_for_driver(driver_process),
+            )
         except Exception as exc:
             self.stop_odin1()
             QMessageBox.warning(self, "Odin1 Error", str(exc))
@@ -356,6 +361,13 @@ class ElfVisionMain(QWidget):
             self.on_odin_rviz_output,
             self.on_odin_rviz_finished,
         )
+
+    def _ensure_odin_rviz_for_driver(self, driver_process):
+        if driver_process is not self.odin_driver_process:
+            return
+        if driver_process.state() == QProcess.NotRunning:
+            return
+        self._ensure_odin_rviz()
 
     def _start_shell_process(self, command, output_slot, finished_slot):
         process = QProcess(self)
