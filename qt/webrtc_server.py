@@ -46,6 +46,7 @@ class WebRtcServer:
         self._gst_webrtc = None
         self._glib = None
         self._last_error = ""
+        self._client_error = ""
 
     @property
     def is_running(self):
@@ -393,6 +394,7 @@ class WebRtcServer:
                 "viewer_connected": self._websocket is not None,
                 "codec": "H.264 / mpph264enc",
                 "last_error": self._last_error,
+                "client_error": self._client_error,
             }
         )
         return status
@@ -420,6 +422,19 @@ class WebRtcServer:
                     self.wfile.write(body)
                 else:
                     self.send_error(404)
+
+            def do_POST(self):
+                if self.path != "/client-error":
+                    self.send_error(404)
+                    return
+                length = min(int(self.headers.get("Content-Length", "0")), 4096)
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                    service._client_error = str(payload.get("error", ""))[:500]
+                except (UnicodeDecodeError, ValueError):
+                    service._client_error = "Invalid browser error report"
+                self.send_response(204)
+                self.end_headers()
 
             def log_message(self, _format, *_args):
                 pass
@@ -476,42 +491,61 @@ let ws=null;
 let remoteReady=false;
 const pendingIce=[];
 
+async function reportError(error){
+  const message=error&&error.message?error.message:String(error);
+  statusEl.textContent=message;
+  try{
+    await fetch('/client-error',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({error:message})});
+  }catch(e){}
+}
+
 async function connect(){
-  pc=new RTCPeerConnection({iceServers:[]});
-  const transceiver=pc.addTransceiver('video',{direction:'recvonly'});
-  if(transceiver.setCodecPreferences&&RTCRtpReceiver.getCapabilities){
-    const codecs=RTCRtpReceiver.getCapabilities('video').codecs
-      .filter(codec=>codec.mimeType.toLowerCase()==='video/h264');
-    if(codecs.length)transceiver.setCodecPreferences(codecs);
-    else statusEl.textContent='This browser does not support H.264 WebRTC';
-  }
-  pc.ontrack=e=>{video.srcObject=e.streams[0];};
-  ws=new WebSocket(`ws://${location.hostname}:__SIGNAL_PORT__`);
-  pc.onicecandidate=e=>{
-    if(e.candidate&&ws.readyState===WebSocket.OPEN){
-      ws.send(JSON.stringify({type:'ice',candidate:e.candidate.candidate,
-        sdpMLineIndex:e.candidate.sdpMLineIndex||0}));
+  try{
+    if(!window.RTCPeerConnection)throw new Error('WebRTC is not supported by this browser');
+    pc=new RTCPeerConnection({iceServers:[]});
+    const transceiver=pc.addTransceiver('video',{direction:'recvonly'});
+    if(transceiver.setCodecPreferences&&window.RTCRtpReceiver&&RTCRtpReceiver.getCapabilities){
+      const capabilities=RTCRtpReceiver.getCapabilities('video');
+      const codecs=capabilities&&capabilities.codecs?capabilities.codecs
+        .filter(codec=>codec.mimeType.toLowerCase()==='video/h264'):[];
+      if(codecs.length)transceiver.setCodecPreferences(codecs);
     }
-  };
-  ws.onopen=async()=>{
-    const offer=await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    ws.send(JSON.stringify({type:'offer',sdp:offer.sdp}));
-  };
-  ws.onmessage=async event=>{
-    const message=JSON.parse(event.data);
-    if(message.type==='answer'){
-      await pc.setRemoteDescription({type:'answer',sdp:message.sdp});
-      remoteReady=true;
-      for(const candidate of pendingIce)await pc.addIceCandidate(candidate);
-      pendingIce.length=0;
-    }else if(message.type==='ice'){
-      const candidate={candidate:message.candidate,
-        sdpMLineIndex:message.sdpMLineIndex||0};
-      if(remoteReady)await pc.addIceCandidate(candidate);else pendingIce.push(candidate);
-    }
-  };
-  ws.onclose=()=>{statusEl.textContent='Disconnected';};
+    pc.ontrack=e=>{video.srcObject=e.streams[0];video.play().catch(reportError);};
+    ws=new WebSocket(`ws://${location.hostname}:__SIGNAL_PORT__`);
+    pc.onicecandidate=e=>{
+      if(e.candidate&&ws.readyState===WebSocket.OPEN){
+        ws.send(JSON.stringify({type:'ice',candidate:e.candidate.candidate,
+          sdpMLineIndex:e.candidate.sdpMLineIndex||0}));
+      }
+    };
+    ws.onopen=async()=>{
+      try{
+        const offer=await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({type:'offer',sdp:offer.sdp}));
+      }catch(error){reportError(error);}
+    };
+    ws.onmessage=async event=>{
+      try{
+        const message=JSON.parse(event.data);
+        if(message.type==='answer'){
+          await pc.setRemoteDescription({type:'answer',sdp:message.sdp});
+          remoteReady=true;
+          for(const candidate of pendingIce)await pc.addIceCandidate(candidate);
+          pendingIce.length=0;
+        }else if(message.type==='ice'){
+          const candidate={candidate:message.candidate,
+            sdpMLineIndex:message.sdpMLineIndex||0};
+          if(remoteReady)await pc.addIceCandidate(candidate);else pendingIce.push(candidate);
+        }
+      }catch(error){reportError(error);}
+    };
+    ws.onerror=()=>reportError('WebSocket connection failed on port __SIGNAL_PORT__');
+    ws.onclose=event=>{
+      if(!event.wasClean)reportError(`WebSocket closed: ${event.code}`);
+    };
+  }catch(error){reportError(error);}
 }
 
 async function updateStatus(){
@@ -520,9 +554,12 @@ async function updateStatus(){
     const parts=[`Task: ${m.task_name||'--'}`,`FPS: ${Number(m.fps||0).toFixed(2)}`,
       `Resolution: ${m.width||'--'}x${m.height||'--'}`,m.codec||'H.264'];
     if(m.last_error)parts.push(m.last_error);
+    if(m.client_error)parts.push(m.client_error);
     statusEl.textContent=parts.join(' | ');
   }catch(e){}
 }
+window.addEventListener('error',event=>reportError(event.error||event.message));
+window.addEventListener('unhandledrejection',event=>reportError(event.reason));
 connect();setInterval(updateStatus,1000);updateStatus();
 </script>
 </body>
