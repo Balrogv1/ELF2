@@ -47,6 +47,10 @@ class WebRtcServer:
         self._glib = None
         self._last_error = ""
         self._client_error = ""
+        self._client_state = ""
+        self._peer_states = {}
+        self._local_ice_count = 0
+        self._remote_ice_count = 0
 
     @property
     def is_running(self):
@@ -189,6 +193,17 @@ class WebRtcServer:
         if self._appsrc is None or self._webrtc is None:
             raise RuntimeError("WebRTC pipeline elements were not created")
         self._webrtc.connect("on-ice-candidate", self._on_local_ice)
+        for property_name in (
+            "signaling-state",
+            "ice-gathering-state",
+            "ice-connection-state",
+            "connection-state",
+        ):
+            self._webrtc.connect(
+                "notify::{}".format(property_name),
+                self._on_peer_state_changed,
+                property_name,
+            )
         bus = self._pipeline.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self._on_bus_message)
@@ -273,6 +288,11 @@ class WebRtcServer:
         if previous is not None and previous is not websocket:
             await previous.close(code=1012, reason="New viewer connected")
         self._websocket = websocket
+        self._last_error = ""
+        self._client_error = ""
+        self._client_state = ""
+        self._local_ice_count = 0
+        self._remote_ice_count = 0
         try:
             async for raw_message in websocket:
                 message = json.loads(raw_message)
@@ -329,6 +349,7 @@ class WebRtcServer:
             future.set_exception(exc)
 
     def _add_remote_ice(self, line_index, candidate):
+        self._remote_ice_count += 1
         self._glib.idle_add(
             self._webrtc.emit,
             "add-ice-candidate",
@@ -337,6 +358,7 @@ class WebRtcServer:
         )
 
     def _on_local_ice(self, _webrtc, line_index, candidate):
+        self._local_ice_count += 1
         loop = self._signal_loop
         websocket = self._websocket
         if loop is None or websocket is None:
@@ -349,6 +371,10 @@ class WebRtcServer:
             }
         )
         asyncio.run_coroutine_threadsafe(websocket.send(message), loop)
+
+    def _on_peer_state_changed(self, webrtc, _property, property_name):
+        value = webrtc.get_property(property_name)
+        self._peer_states[property_name] = getattr(value, "value_nick", str(value))
 
     def _feed_frames(self):
         current_shape = None
@@ -395,6 +421,10 @@ class WebRtcServer:
                 "codec": "H.264 / mpph264enc",
                 "last_error": self._last_error,
                 "client_error": self._client_error,
+                "client_state": self._client_state,
+                "local_ice_candidates": self._local_ice_count,
+                "remote_ice_candidates": self._remote_ice_count,
+                "peer_states": dict(self._peer_states),
             }
         )
         return status
@@ -424,15 +454,18 @@ class WebRtcServer:
                     self.send_error(404)
 
             def do_POST(self):
-                if self.path != "/client-error":
+                if self.path not in ("/client-error", "/client-state"):
                     self.send_error(404)
                     return
                 length = min(int(self.headers.get("Content-Length", "0")), 4096)
                 try:
                     payload = json.loads(self.rfile.read(length).decode("utf-8"))
-                    service._client_error = str(payload.get("error", ""))[:500]
+                    if self.path == "/client-error":
+                        service._client_error = str(payload.get("error", ""))[:500]
+                    else:
+                        service._client_state = str(payload.get("state", ""))[:500]
                 except (UnicodeDecodeError, ValueError):
-                    service._client_error = "Invalid browser error report"
+                    service._client_error = "Invalid browser report"
                 self.send_response(204)
                 self.end_headers()
 
@@ -500,6 +533,15 @@ async function reportError(error){
   }catch(e){}
 }
 
+async function reportState(){
+  if(!pc)return;
+  const state=`ice=${pc.iceConnectionState}, connection=${pc.connectionState}, signaling=${pc.signalingState}`;
+  try{
+    await fetch('/client-state',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({state})});
+  }catch(e){}
+}
+
 async function connect(){
   try{
     if(!window.RTCPeerConnection)throw new Error('WebRTC is not supported by this browser');
@@ -512,6 +554,9 @@ async function connect(){
       if(codecs.length)transceiver.setCodecPreferences(codecs);
     }
     pc.ontrack=e=>{video.srcObject=e.streams[0];video.play().catch(reportError);};
+    pc.oniceconnectionstatechange=reportState;
+    pc.onconnectionstatechange=reportState;
+    pc.onsignalingstatechange=reportState;
     ws=new WebSocket(`ws://${location.hostname}:__SIGNAL_PORT__`);
     pc.onicecandidate=e=>{
       if(e.candidate&&ws.readyState===WebSocket.OPEN){
@@ -555,6 +600,7 @@ async function updateStatus(){
       `Resolution: ${m.width||'--'}x${m.height||'--'}`,m.codec||'H.264'];
     if(m.last_error)parts.push(m.last_error);
     if(m.client_error)parts.push(m.client_error);
+    if(m.client_state)parts.push(m.client_state);
     statusEl.textContent=parts.join(' | ');
   }catch(e){}
 }
