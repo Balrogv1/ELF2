@@ -43,7 +43,7 @@ class WebRtcServer:
         self._bus = None
         self._appsrc = None
         self._webrtc = None
-        self._has_offer = False
+        self._rtp_payload_type = 96
         self._gst = None
         self._gst_sdp = None
         self._gst_webrtc = None
@@ -64,7 +64,6 @@ class WebRtcServer:
             return
         self._load_gstreamer()
         self._stopping = False
-        self._has_offer = False
         try:
             self._build_pipeline()
             self._start_glib()
@@ -113,7 +112,6 @@ class WebRtcServer:
             self._feeder_thread.join(timeout=2)
         self._feeder_thread = None
         self._pending_frame = None
-        self._has_offer = False
 
     def publish(self, frame_bgr, metrics):
         with self._condition:
@@ -165,7 +163,7 @@ class WebRtcServer:
         self._gst_webrtc = GstWebRTC
         self._glib = GLib
 
-    def _build_pipeline(self):
+    def _build_pipeline(self, payload_type=96):
         description = (
             "appsrc name=source is-live=true block=false do-timestamp=true format=time "
             "caps=video/x-raw,format=BGR,width=640,height=480,framerate={fps}/1 "
@@ -175,8 +173,9 @@ class WebRtcServer:
             "! mpph264enc bps={bps} gop={gop} rc-mode=cbr profile=baseline "
             "header-mode=each-idr max-pending=2 "
             "! h264parse config-interval=-1 "
-            "! rtph264pay config-interval=1 aggregate-mode=zero-latency pt=96 mtu=1200 "
-            "! application/x-rtp,media=video,encoding-name=H264,clock-rate=90000,payload=96 "
+            "! rtph264pay config-interval=1 aggregate-mode=zero-latency pt={payload} mtu=1200 "
+            "! application/x-rtp,media=video,encoding-name=H264,clock-rate=90000,"
+            "payload={payload},packetization-mode=(string)1 "
             "! webrtcbin name=webrtc bundle-policy=max-bundle"
         ).format(
             fps=self.fps,
@@ -184,6 +183,7 @@ class WebRtcServer:
             height=self.height,
             bps=self.bitrate_kbps * 1000,
             gop=self.fps,
+            payload=payload_type,
         )
         try:
             self._pipeline = self._gst.parse_launch(description)
@@ -193,6 +193,7 @@ class WebRtcServer:
         self._webrtc = self._pipeline.get_by_name("webrtc")
         if self._appsrc is None or self._webrtc is None:
             raise RuntimeError("WebRTC pipeline elements were not created")
+        self._rtp_payload_type = payload_type
         self._webrtc.connect("on-ice-candidate", self._on_local_ice)
         for property_name in (
             "signaling-state",
@@ -221,11 +222,11 @@ class WebRtcServer:
         if pipeline is not None and self._gst is not None:
             pipeline.set_state(self._gst.State.NULL)
 
-    def _replace_pipeline(self):
+    def _replace_pipeline(self, payload_type):
         with self._pipeline_lock:
             self._destroy_pipeline_locked()
             self._peer_states = {}
-            self._build_pipeline()
+            self._build_pipeline(payload_type)
             result = self._pipeline.set_state(self._gst.State.PLAYING)
             if result == self._gst.StateChangeReturn.FAILURE:
                 raise RuntimeError("Failed to restart WebRTC GStreamer pipeline")
@@ -339,12 +340,11 @@ class WebRtcServer:
 
     def _set_offer_and_create_answer(self, offer_sdp, future):
         try:
-            if self._has_offer:
-                self._replace_pipeline()
-            self._has_offer = True
             result, sdp_message = self._gst_sdp.SDPMessage.new_from_text(offer_sdp)
             if result != self._gst_sdp.SDPResult.OK:
                 raise RuntimeError("Invalid browser SDP offer")
+            payload_type = _select_h264_payload(offer_sdp)
+            self._replace_pipeline(payload_type)
             offer = self._gst_webrtc.WebRTCSessionDescription.new(
                 self._gst_webrtc.WebRTCSDPType.OFFER,
                 sdp_message,
@@ -454,6 +454,7 @@ class WebRtcServer:
                     self._websocket is not None and not self._websocket.closed
                 ),
                 "codec": "H.264 / mpph264enc",
+                "rtp_payload_type": self._rtp_payload_type,
                 "last_error": self._last_error,
                 "client_error": self._client_error,
                 "client_state": self._client_state,
@@ -508,6 +509,67 @@ class WebRtcServer:
                 pass
 
         return Handler
+
+
+def _select_h264_payload(offer_sdp):
+    video_formats = []
+    codecs = {}
+    parameters = {}
+    in_video = False
+
+    for raw_line in offer_sdp.splitlines():
+        line = raw_line.strip()
+        if line.startswith("m="):
+            fields = line.split()
+            in_video = bool(fields and fields[0] == "m=video")
+            if in_video:
+                video_formats = fields[3:]
+            continue
+        if not in_video:
+            continue
+        if line.startswith("a=rtpmap:"):
+            payload, separator, codec = line[9:].partition(" ")
+            if separator:
+                codecs[payload] = codec.split("/", 1)[0].upper()
+        elif line.startswith("a=fmtp:"):
+            payload, separator, value = line[7:].partition(" ")
+            if separator:
+                parameters[payload] = {
+                    key.strip().lower(): item.strip().lower()
+                    for part in value.split(";")
+                    for key, separator, item in (part.partition("="),)
+                    if separator
+                }
+
+    candidates = [
+        payload for payload in video_formats if codecs.get(payload) == "H264"
+    ]
+    if not candidates:
+        raise RuntimeError("Browser SDP offer does not contain H.264 video")
+
+    def packetization_one(payload):
+        return parameters.get(payload, {}).get("packetization-mode", "0") == "1"
+
+    def constrained_baseline(payload):
+        profile = parameters.get(payload, {}).get("profile-level-id", "")
+        return profile.startswith(("42c0", "42e0"))
+
+    preferred = [
+        payload
+        for payload in candidates
+        if packetization_one(payload) and constrained_baseline(payload)
+    ]
+    preferred.extend(
+        payload
+        for payload in candidates
+        if packetization_one(payload) and payload not in preferred
+    )
+    preferred.extend(payload for payload in candidates if payload not in preferred)
+
+    payload_type = int(preferred[0])
+    if not 0 <= payload_type <= 127:
+        raise RuntimeError("Invalid H.264 RTP payload type in browser SDP")
+    return payload_type
 
 
 def _local_ip():
