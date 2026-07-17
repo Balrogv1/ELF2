@@ -25,6 +25,7 @@ class WebRtcServer:
         self.fps = fps
         self.bitrate_kbps = bitrate_kbps
         self._condition = threading.Condition()
+        self._pipeline_lock = threading.Lock()
         self._pending_frame = None
         self._frame_shape = None
         self._metrics = {}
@@ -39,8 +40,10 @@ class WebRtcServer:
         self._glib_loop = None
         self._feeder_thread = None
         self._pipeline = None
+        self._bus = None
         self._appsrc = None
         self._webrtc = None
+        self._has_offer = False
         self._gst = None
         self._gst_sdp = None
         self._gst_webrtc = None
@@ -61,6 +64,7 @@ class WebRtcServer:
             return
         self._load_gstreamer()
         self._stopping = False
+        self._has_offer = False
         try:
             self._build_pipeline()
             self._start_glib()
@@ -95,10 +99,8 @@ class WebRtcServer:
 
         self._stop_signaling()
 
-        pipeline = self._pipeline
-        self._pipeline = None
-        if pipeline is not None and self._gst is not None:
-            pipeline.set_state(self._gst.State.NULL)
+        with self._pipeline_lock:
+            self._destroy_pipeline_locked()
 
         if self._glib_loop is not None:
             self._glib_loop.quit()
@@ -111,8 +113,7 @@ class WebRtcServer:
             self._feeder_thread.join(timeout=2)
         self._feeder_thread = None
         self._pending_frame = None
-        self._appsrc = None
-        self._webrtc = None
+        self._has_offer = False
 
     def publish(self, frame_bgr, metrics):
         with self._condition:
@@ -204,9 +205,30 @@ class WebRtcServer:
                 self._on_peer_state_changed,
                 property_name,
             )
-        bus = self._pipeline.get_bus()
-        bus.add_signal_watch()
-        bus.connect("message", self._on_bus_message)
+        self._bus = self._pipeline.get_bus()
+        self._bus.add_signal_watch()
+        self._bus.connect("message", self._on_bus_message)
+
+    def _destroy_pipeline_locked(self):
+        pipeline = self._pipeline
+        bus = self._bus
+        self._pipeline = None
+        self._bus = None
+        self._appsrc = None
+        self._webrtc = None
+        if bus is not None:
+            bus.remove_signal_watch()
+        if pipeline is not None and self._gst is not None:
+            pipeline.set_state(self._gst.State.NULL)
+
+    def _replace_pipeline(self):
+        with self._pipeline_lock:
+            self._destroy_pipeline_locked()
+            self._peer_states = {}
+            self._build_pipeline()
+            result = self._pipeline.set_state(self._gst.State.PLAYING)
+            if result == self._gst.StateChangeReturn.FAILURE:
+                raise RuntimeError("Failed to restart WebRTC GStreamer pipeline")
 
     def _start_glib(self):
         self._glib_loop = self._glib.MainLoop()
@@ -317,6 +339,9 @@ class WebRtcServer:
 
     def _set_offer_and_create_answer(self, offer_sdp, future):
         try:
+            if self._has_offer:
+                self._replace_pipeline()
+            self._has_offer = True
             result, sdp_message = self._gst_sdp.SDPMessage.new_from_text(offer_sdp)
             if result != self._gst_sdp.SDPResult.OK:
                 raise RuntimeError("Invalid browser SDP offer")
@@ -377,6 +402,7 @@ class WebRtcServer:
         self._peer_states[property_name] = getattr(value, "value_nick", str(value))
 
     def _feed_frames(self):
+        current_appsrc = None
         current_shape = None
         while True:
             with self._condition:
@@ -389,21 +415,28 @@ class WebRtcServer:
                 self._pending_frame = None
             height, width = frame.shape[:2]
             shape = (height, width)
-            if shape != current_shape:
-                caps = self._gst.Caps.from_string(
-                    "video/x-raw,format=BGR,width={},height={},framerate={}/1".format(
-                        width,
-                        height,
-                        self.fps,
-                    )
-                )
-                self._appsrc.set_property("caps", caps)
-                current_shape = shape
             data = frame.tobytes()
-            buffer = self._gst.Buffer.new_allocate(None, len(data), None)
-            buffer.fill(0, data)
-            buffer.duration = self._gst.SECOND // self.fps
-            result = self._appsrc.emit("push-buffer", buffer)
+            with self._pipeline_lock:
+                appsrc = self._appsrc
+                if appsrc is None:
+                    continue
+                if appsrc is not current_appsrc:
+                    current_appsrc = appsrc
+                    current_shape = None
+                if shape != current_shape:
+                    caps = self._gst.Caps.from_string(
+                        "video/x-raw,format=BGR,width={},height={},framerate={}/1".format(
+                            width,
+                            height,
+                            self.fps,
+                        )
+                    )
+                    appsrc.set_property("caps", caps)
+                    current_shape = shape
+                buffer = self._gst.Buffer.new_allocate(None, len(data), None)
+                buffer.fill(0, data)
+                buffer.duration = self._gst.SECOND // self.fps
+                result = appsrc.emit("push-buffer", buffer)
             if result != self._gst.FlowReturn.OK:
                 self._last_error = "appsrc push failed: {}".format(result.value_nick)
 
@@ -417,7 +450,9 @@ class WebRtcServer:
             status = dict(self._metrics)
         status.update(
             {
-                "viewer_connected": self._websocket is not None,
+                "viewer_connected": (
+                    self._websocket is not None and not self._websocket.closed
+                ),
                 "codec": "H.264 / mpph264enc",
                 "last_error": self._last_error,
                 "client_error": self._client_error,
@@ -523,6 +558,7 @@ let pc=null;
 let ws=null;
 let remoteReady=false;
 const pendingIce=[];
+let reconnectTimer=null;
 
 async function reportError(error){
   const message=error&&error.message?error.message:String(error);
@@ -544,6 +580,10 @@ async function reportState(){
 
 async function connect(){
   try{
+    reconnectTimer=null;
+    remoteReady=false;
+    pendingIce.length=0;
+    if(pc)pc.close();
     if(!window.RTCPeerConnection)throw new Error('WebRTC is not supported by this browser');
     pc=new RTCPeerConnection({iceServers:[]});
     const transceiver=pc.addTransceiver('video',{direction:'recvonly'});
@@ -589,8 +629,13 @@ async function connect(){
     ws.onerror=()=>reportError('WebSocket connection failed on port __SIGNAL_PORT__');
     ws.onclose=event=>{
       if(!event.wasClean)reportError(`WebSocket closed: ${event.code}`);
+      if(pc)pc.close();
+      if(!reconnectTimer)reconnectTimer=setTimeout(connect,1000);
     };
-  }catch(error){reportError(error);}
+  }catch(error){
+    reportError(error);
+    if(!reconnectTimer)reconnectTimer=setTimeout(connect,1000);
+  }
 }
 
 async function updateStatus(){
