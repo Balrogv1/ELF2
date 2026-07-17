@@ -227,7 +227,7 @@ class MediaMtxPublisher:
     def _build_pipeline(self):
         description = (
             "appsrc name=source is-live=true block=false do-timestamp=true format=time "
-            "caps=video/x-raw,format=BGR,width=640,height=480,framerate={fps}/1 "
+            "caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 "
             "! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 "
             "! videoconvert ! videoscale add-borders=true "
             "! video/x-raw,format=NV12,width={width},height={height},pixel-aspect-ratio=1/1 "
@@ -269,7 +269,9 @@ class MediaMtxPublisher:
         self._glib_thread.start()
 
     def _feed_frames(self):
-        current_shape = None
+        import cv2
+        import numpy as np
+
         while True:
             with self._condition:
                 self._condition.wait_for(
@@ -279,18 +281,7 @@ class MediaMtxPublisher:
                     return
                 frame = self._pending_frame
                 self._pending_frame = None
-            height, width = frame.shape[:2]
-            shape = (height, width)
-            if shape != current_shape:
-                caps = self._gst.Caps.from_string(
-                    "video/x-raw,format=BGR,width={},height={},framerate={}/1".format(
-                        width,
-                        height,
-                        self.fps,
-                    )
-                )
-                self._appsrc.set_property("caps", caps)
-                current_shape = shape
+            frame = _letterbox_bgr(frame, self.width, self.height, cv2, np)
             data = frame.tobytes()
             buffer = self._gst.Buffer.new_allocate(None, len(data), None)
             buffer.fill(0, data)
@@ -317,6 +308,33 @@ def _find_mediamtx():
         if candidate.is_file() and os.access(str(candidate), os.X_OK):
             return candidate
     raise RuntimeError("MediaMTX not found. Install it at ~/.local/bin/mediamtx")
+
+
+def _letterbox_bgr(frame, target_width, target_height, cv2, np):
+    if frame.ndim != 3 or frame.shape[2] != 3:
+        raise ValueError("MediaMTX publisher requires a three-channel BGR frame")
+
+    source_height, source_width = frame.shape[:2]
+    if source_width == target_width and source_height == target_height:
+        return np.ascontiguousarray(frame, dtype=np.uint8)
+
+    scale = min(target_width / source_width, target_height / source_height)
+    resized_width = max(1, int(round(source_width * scale)))
+    resized_height = max(1, int(round(source_height * scale)))
+    interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+    resized = cv2.resize(
+        frame,
+        (resized_width, resized_height),
+        interpolation=interpolation,
+    )
+    if resized.dtype != np.uint8:
+        resized = np.clip(resized, 0, 255).astype(np.uint8)
+
+    output = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+    x = (target_width - resized_width) // 2
+    y = (target_height - resized_height) // 2
+    output[y : y + resized_height, x : x + resized_width] = resized
+    return output
 
 
 def _port_is_open(host, port):
