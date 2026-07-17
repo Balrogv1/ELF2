@@ -42,8 +42,8 @@ from PyQt5.QtWidgets import (
 )
 
 from task_registry import TASKS, get_task_class
+from mediamtx_publisher import MediaMtxPublisher
 from video_worker import VideoWorker
-from webrtc_server import WebRtcServer
 
 
 RESOLUTIONS = {
@@ -239,23 +239,23 @@ class ElfVisionMain(QWidget):
         self.param_container.setLayout(self.param_box)
         top_controls.addWidget(self.param_container)
 
-        top_controls.addWidget(self._section_label("WebRTC View"))
-        self.mobile_port_input = QLineEdit("8080")
-        self.mobile_port_input.setPlaceholderText("HTTP port")
+        top_controls.addWidget(self._section_label("MediaMTX View"))
+        self.mobile_port_input = QLineEdit("8889")
+        self.mobile_port_input.setPlaceholderText("WebRTC HTTP port")
         top_controls.addWidget(self.mobile_port_input)
 
-        self.mobile_url_label = QLabel("WebRTC view: stopped")
+        self.mobile_url_label = QLabel("MediaMTX view: stopped")
         self.mobile_url_label.setWordWrap(True)
         self.mobile_url_label.setStyleSheet(
             "background: #eef4f8; color: #17212b; padding: 8px; font-size: 13px;"
         )
         top_controls.addWidget(self.mobile_url_label)
 
-        self.mobile_start_button = QPushButton("Start WebRTC View")
+        self.mobile_start_button = QPushButton("Start MediaMTX View")
         self.mobile_start_button.setStyleSheet(self._button_style())
         self.mobile_start_button.clicked.connect(self.start_mobile_stream)
 
-        self.mobile_stop_button = QPushButton("Stop WebRTC View")
+        self.mobile_stop_button = QPushButton("Stop MediaMTX View")
         self.mobile_stop_button.setStyleSheet(self._button_style())
         self.mobile_stop_button.clicked.connect(self.stop_mobile_stream)
         self.mobile_stop_button.setEnabled(False)
@@ -313,14 +313,18 @@ class ElfVisionMain(QWidget):
         if self.mobile_stream is not None:
             return
         try:
-            port = int(self.mobile_port_input.text().strip() or "8080")
-            if not 1 <= port <= 65534:
-                raise ValueError("Port must be between 1 and 65534")
+            port = int(self.mobile_port_input.text().strip() or "8889")
+            if not 1 <= port <= 65535:
+                raise ValueError("Port must be between 1 and 65535")
             width, height = RESOLUTIONS[self.resolution_combo.currentText()]
-            stream = WebRtcServer(port=port, width=width, height=height)
+            stream = MediaMtxPublisher(
+                web_port=port,
+                width=width,
+                height=height,
+            )
             stream.start()
         except (OSError, RuntimeError, ValueError) as exc:
-            QMessageBox.warning(self, "WebRTC View Error", str(exc))
+            QMessageBox.warning(self, "MediaMTX View Error", str(exc))
             return
         self.mobile_stream = stream
         self.mobile_port_input.setEnabled(False)
@@ -336,7 +340,7 @@ class ElfVisionMain(QWidget):
         self.mobile_port_input.setEnabled(True)
         self.mobile_start_button.setEnabled(True)
         self.mobile_stop_button.setEnabled(False)
-        self.mobile_url_label.setText("WebRTC view: stopped")
+        self.mobile_url_label.setText("MediaMTX view: stopped")
 
     def update_odin_visibility(self):
         visible = self.task_combo.currentData() == "passthrough"

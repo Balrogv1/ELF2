@@ -8,7 +8,9 @@
 | --- | --- |
 | `qt/` | PyQt5 主界面、任务调度、Odin1 控制和任务适配器 |
 | `qt/main.py` | 推荐启动入口 |
-| `qt/webrtc_server.py` | 使用 Rockchip H.264 硬编码向手机浏览器输出 WebRTC 画面 |
+| `qt/mediamtx_publisher.py` | 使用 Rockchip H.264 硬编码并通过 RTSP 发布到 MediaMTX |
+| `qt/mediamtx.yml` | MediaMTX 的 RTSP 输入和多端 WebRTC 输出配置 |
+| `qt/webrtc_server.py` | 旧版单观看端 WebRTC 实现，保留用于对照和回退 |
 | `qt/tasks/` | 视觉任务插件目录，每个功能一个任务文件 |
 | `qt/odin1_odom_bridge.py` | ROS2 bridge，订阅 `/odin1/odometry` 并把 XYZ 输出给 Qt |
 | `yolo_python/` | YOLOv8 RKNN USB 摄像头检测脚本 |
@@ -29,31 +31,31 @@ python3 main.py
 
 界面右侧可以切换任务、分辨率、启动/停止视觉任务，并独立启动/停止 Odin1 lite 驱动。
 
-## WebRTC 手机查看识别结果
+## MediaMTX 多端查看识别结果
 
-板卡首次使用需要安装 GStreamer WebRTC 的 Python 类型绑定：
+板卡首次使用需要安装 RTSP 发布插件，并把 ARM64 MediaMTX 安装到用户目录：
 
 ```bash
-sudo apt-get install gir1.2-gst-plugins-bad-1.0 gstreamer1.0-nice
-python3 -m pip install --user websockets==10.4
+sudo apt-get install gstreamer1.0-rtsp
+install -m 755 mediamtx ~/.local/bin/mediamtx
 ```
 
-手机和 ELF2 连接到同一局域网。在 Qt 右侧 `WebRTC View` 中保留默认端口 `8080`，点击 `Start WebRTC View`。界面会显示访问地址，例如：
+手机和 ELF2 连接到同一局域网。在 Qt 右侧 `MediaMTX View` 中保留默认端口 `8889`，点击 `Start MediaMTX View`。界面会显示访问地址，例如：
 
 ```text
-http://192.168.93.64:8080
+http://192.168.93.64:8889/vision
 ```
 
-用手机浏览器打开该地址，即可查看当前任务处理后的画面，以及任务名称、FPS 和分辨率。HTTP 页面使用端口 `8080`，WebSocket signaling 使用相邻端口 `8081`，两个端口都需要允许手机访问。
+手机、电脑或其他浏览器可以同时打开该地址。MediaMTX 使用 `8554/TCP` 接收板卡本机 RTSP 发布流，使用 `8889/TCP` 提供 WebRTC 页面，并使用 `8189/UDP` 传输 WebRTC 媒体。
 
 编码链路：
 
 ```text
 frame_bgr -> appsrc -> videoconvert -> NV12 -> mpph264enc
-          -> h264parse -> rtph264pay -> webrtcbin -> browser
+          -> h264parse -> RTSP -> MediaMTX -> WebRTC -> browsers
 ```
 
-手机端不会再次打开摄像头。停止视觉任务会发送黑帧，但保持 WebRTC 连接；点击 `Stop WebRTC View` 才会关闭 HTTP、signaling 和 GStreamer pipeline。当前实现支持一个手机浏览器连接，新连接会替换旧连接。
+板卡只执行一次 RK3588 MPP H.264 硬件编码，MediaMTX 负责向多个观看端分发。停止视觉任务会发布黑帧；点击 `Stop MediaMTX View` 会停止 RTSP publisher 和由 Qt 启动的 MediaMTX 进程。
 
 ## 当前视觉任务
 
